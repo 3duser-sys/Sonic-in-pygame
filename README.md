@@ -1,1 +1,3 @@
 # Sonic-in-pygame
+# THIS CANNOT BE USED UNTIL THAT "NO" TURNS INTO A "YES"
+# NO
