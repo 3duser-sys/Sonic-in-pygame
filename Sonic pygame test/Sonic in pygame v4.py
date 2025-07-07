@@ -71,26 +71,31 @@ class Player:
         self.was_lookup = False
         self.lookup_hold = False  # For look_up: True = hold last frame, False = animate
 
+        self.idle_stage = 0  # 0=show idle_1, 1=do idle_special
+
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def update(self, keys):
         moved = False
-        if keys[pygame.K_LEFT]:
-            self.ground_speed -= 0.5
-            self.facing_left = True
-            moved = True
-        if keys[pygame.K_RIGHT]:
-            self.ground_speed += 0.5
-            self.facing_left = False
-            moved = True
-
-        # Friction
-        self.ground_speed *= 0.95
 
         # Crouch/look up
         crouching = keys[pygame.K_DOWN] and self.on_ground
         looking_up = keys[pygame.K_UP] and self.on_ground
+
+        # Only allow movement if not crouching or looking up
+        if not crouching and not looking_up:
+            if keys[pygame.K_LEFT]:
+                self.ground_speed -= 0.5
+                self.facing_left = True
+                moved = True
+            if keys[pygame.K_RIGHT]:
+                self.ground_speed += 0.5
+                self.facing_left = False
+                moved = True
+
+        # Friction
+        self.ground_speed *= 0.95
 
         # Position of foot for ground check
         foot_x = self.x + self.width // 2
@@ -127,6 +132,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif crouching and 'crouch' in animations:
             self.state = 'crouch'
             # Start crouch animation if just pressed down
@@ -140,6 +146,7 @@ class Player:
                 self.crouch_hold = True
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif looking_up and 'look_up' in animations:
             self.state = 'look_up'
             # Start look up animation if just pressed up
@@ -153,6 +160,7 @@ class Player:
                 self.lookup_hold = True
             self.crouch_hold = False
             self.was_crouching = False
+            self.idle_stage = 0
         elif speed > 8 and 'topspeed_run' in animations:
             self.state = 'topspeed_run'
             self._reset_idle()
@@ -160,6 +168,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif speed > 4:
             self.state = 'run'
             self._reset_idle()
@@ -167,6 +176,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif speed > 0.8:
             self.state = 'walk'
             self._reset_idle()
@@ -174,6 +184,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         else:
             # IDLE LOGIC
             if moved or not self.on_ground:
@@ -182,21 +193,24 @@ class Player:
                 self.was_crouching = False
                 self.lookup_hold = False
                 self.was_lookup = False
+                self.idle_stage = 0
             else:
                 self.idle_time += clock.get_time() / 1000.0  # seconds
 
-            # After 5 seconds, play idle_2 and idle_3 repeatedly for 3 seconds, then return to idle_1
-            if self.idle_time >= 5:
+            if self.idle_time < 5:
+                self.state = 'idle'
+                self.idle_stage = 0
+            else:
+                self.idle_stage = 1
+                # After 5 seconds, play idle_2 and idle_3 repeatedly for 3 seconds, then return to idle_1
                 self.idle_special = True
                 self.idle_special_timer += clock.get_time() / 1000.0
-
-                # Play idle_2 and idle_3 repeatedly for 3 seconds
                 if self.idle_special_timer <= 3:
                     self.state = 'idle_special'
                 else:
                     self._reset_idle()
-            else:
-                self.state = 'idle'
+                    self.state = 'idle'
+                    self.idle_stage = 0
             self.crouch_hold = False
             self.was_crouching = False
             self.lookup_hold = False
@@ -213,6 +227,8 @@ class Player:
         self.anim_timer += 1
         if self.state == 'idle_special':
             frame_speed = 10  # slower loop for idle_2/3
+        elif self.state == 'idle':
+            frame_speed = 9999  # Never animate idle (always idle_1 frame)
         else:
             frame_speed = max(1, int(12 - min(speed, 10)))
         if self.anim_timer >= frame_speed:
@@ -231,6 +247,8 @@ class Player:
                     if self.anim_index >= len(animations['look_up']):
                         self.anim_index = len(animations['look_up']) - 1
                         self.lookup_hold = True
+            elif self.state == 'idle':
+                self.anim_index = 0  # Always idle_1
             else:
                 self.anim_index = (self.anim_index + 1) % len(animations.get(self.state, [animations['idle'][0]]))
 
@@ -274,12 +292,15 @@ class Player:
             frame = frames[-1]
         elif self.state == 'look_up' and self.lookup_hold:
             frame = frames[-1]
+        elif self.state == 'idle':
+            frame = frames[0]  # Always idle_1
         else:
             frame = frames[self.anim_index % len(frames)]
         angle = -self.angle if self.facing_left else self.angle
         frame = pygame.transform.flip(frame, self.facing_left, False)
         rotated = pygame.transform.rotate(frame, angle)
-        rect = rotated.get_rect(center=(self.x + self.width // 2, self.y + self.height // 2))
+        # --- Feet always on ground! ---
+        rect = rotated.get_rect(midbottom=(self.x + self.width // 2, self.y + self.height))
         surface.blit(rotated, rect.topleft)
 
 player = Player()

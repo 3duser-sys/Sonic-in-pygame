@@ -7,7 +7,7 @@ pygame.init()
 # Window setup
 WIDTH, HEIGHT = 800, 480
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Sonic Slope Physics")
+pygame.display.set_caption("Sonic Slope Physics - Side Scrolling")
 clock = pygame.time.Clock()
 
 # Colors
@@ -35,17 +35,20 @@ animations = {
     'hurt': [pygame.image.load(f"{ANIM_FOLDER}/hurt.png").convert_alpha()],
 }
 
+# Make the level longer for scrolling
 level_slopes = [
-    {'start': (0, 440), 'end': (100, 440)},
-    {'start': (100, 440), 'end': (200, 420)},
-    {'start': (200, 420), 'end': (300, 400)},
-    {'start': (300, 400), 'end': (400, 400)},
-    {'start': (400, 400), 'end': (600, 440)},
+    {'start': (0, 440), 'end': (400, 440)},
+    {'start': (400, 440), 'end': (600, 420)},
+    {'start': (600, 420), 'end': (800, 400)},
+    {'start': (800, 400), 'end': (1200, 400)},
+    {'start': (1200, 400), 'end': (1600, 420)},
+    {'start': (1600, 420), 'end': (2000, 440)},
+    {'start': (2000, 440), 'end': (2400, 440)},
 ]
 
 class Player:
     def __init__(self):
-        self.x = 50
+        self.x = 100  # world x
         self.y = 100
         self.width = 48
         self.height = 48
@@ -66,31 +69,34 @@ class Player:
         self.idle_special_timer = 0
 
         self.was_crouching = False
-        self.crouch_hold = False  # For crouch: True = hold last frame, False = animate
-
+        self.crouch_hold = False
         self.was_lookup = False
-        self.lookup_hold = False  # For look_up: True = hold last frame, False = animate
+        self.lookup_hold = False
+        self.idle_stage = 0  # 0=show idle_1, 1=do idle_special
 
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def update(self, keys):
         moved = False
-        if keys[pygame.K_LEFT]:
-            self.ground_speed -= 0.5
-            self.facing_left = True
-            moved = True
-        if keys[pygame.K_RIGHT]:
-            self.ground_speed += 0.5
-            self.facing_left = False
-            moved = True
-
-        # Friction
-        self.ground_speed *= 0.95
 
         # Crouch/look up
         crouching = keys[pygame.K_DOWN] and self.on_ground
         looking_up = keys[pygame.K_UP] and self.on_ground
+
+        # Only allow movement if not crouching or looking up
+        if not crouching and not looking_up:
+            if keys[pygame.K_LEFT]:
+                self.ground_speed -= 0.5
+                self.facing_left = True
+                moved = True
+            if keys[pygame.K_RIGHT]:
+                self.ground_speed += 0.5
+                self.facing_left = False
+                moved = True
+
+        # Friction
+        self.ground_speed *= 0.95
 
         # Position of foot for ground check
         foot_x = self.x + self.width // 2
@@ -127,32 +133,31 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif crouching and 'crouch' in animations:
             self.state = 'crouch'
-            # Start crouch animation if just pressed down
             if not self.was_crouching:
                 self.anim_index = 0
                 self.anim_timer = 0
                 self.crouch_hold = False
             self.was_crouching = True
-            # If animation finished, hold last frame until released
             if self.anim_index == len(animations['crouch']) - 1:
                 self.crouch_hold = True
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif looking_up and 'look_up' in animations:
             self.state = 'look_up'
-            # Start look up animation if just pressed up
             if not self.was_lookup:
                 self.anim_index = 0
                 self.anim_timer = 0
                 self.lookup_hold = False
             self.was_lookup = True
-            # If animation finished, hold last frame until released
             if self.anim_index == len(animations['look_up']) - 1:
                 self.lookup_hold = True
             self.crouch_hold = False
             self.was_crouching = False
+            self.idle_stage = 0
         elif speed > 8 and 'topspeed_run' in animations:
             self.state = 'topspeed_run'
             self._reset_idle()
@@ -160,6 +165,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif speed > 4:
             self.state = 'run'
             self._reset_idle()
@@ -167,6 +173,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         elif speed > 0.8:
             self.state = 'walk'
             self._reset_idle()
@@ -174,6 +181,7 @@ class Player:
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
+            self.idle_stage = 0
         else:
             # IDLE LOGIC
             if moved or not self.on_ground:
@@ -182,21 +190,23 @@ class Player:
                 self.was_crouching = False
                 self.lookup_hold = False
                 self.was_lookup = False
+                self.idle_stage = 0
             else:
                 self.idle_time += clock.get_time() / 1000.0  # seconds
 
-            # After 5 seconds, play idle_2 and idle_3 repeatedly for 3 seconds, then return to idle_1
-            if self.idle_time >= 5:
+            if self.idle_time < 5:
+                self.state = 'idle'
+                self.idle_stage = 0
+            else:
+                self.idle_stage = 1
                 self.idle_special = True
                 self.idle_special_timer += clock.get_time() / 1000.0
-
-                # Play idle_2 and idle_3 repeatedly for 3 seconds
                 if self.idle_special_timer <= 3:
                     self.state = 'idle_special'
                 else:
                     self._reset_idle()
-            else:
-                self.state = 'idle'
+                    self.state = 'idle'
+                    self.idle_stage = 0
             self.crouch_hold = False
             self.was_crouching = False
             self.lookup_hold = False
@@ -204,7 +214,6 @@ class Player:
 
         # Reset animation index if state changed
         if self.state != prev_state:
-            # Only reset anim_index/timer if NOT holding crouch/lookup last frame
             if not ((prev_state == 'crouch' and self.crouch_hold) or (prev_state == 'look_up' and self.lookup_hold)):
                 self.anim_index = 0
                 self.anim_timer = 0
@@ -212,7 +221,9 @@ class Player:
         # Frame timing
         self.anim_timer += 1
         if self.state == 'idle_special':
-            frame_speed = 10  # slower loop for idle_2/3
+            frame_speed = 10
+        elif self.state == 'idle':
+            frame_speed = 9999
         else:
             frame_speed = max(1, int(12 - min(speed, 10)))
         if self.anim_timer >= frame_speed:
@@ -231,17 +242,17 @@ class Player:
                     if self.anim_index >= len(animations['look_up']):
                         self.anim_index = len(animations['look_up']) - 1
                         self.lookup_hold = True
+            elif self.state == 'idle':
+                self.anim_index = 0
             else:
                 self.anim_index = (self.anim_index + 1) % len(animations.get(self.state, [animations['idle'][0]]))
 
-        # If released crouch, reset crouch state
         if self.was_crouching and not crouching:
             self.crouch_hold = False
             self.was_crouching = False
             self.anim_index = 0
             self.anim_timer = 0
 
-        # If released lookup, reset lookup state
         if self.was_lookup and not looking_up:
             self.lookup_hold = False
             self.was_lookup = False
@@ -264,25 +275,35 @@ class Player:
                 return slope, angle, py
         return None, 0, 0
 
-    def draw(self, surface):
+    def draw(self, surface, camera_x):
         if self.state == 'idle_special':
             frames = [animations['idle'][1], animations['idle'][2]]
         else:
             frames = animations[self.state]
-        # For crouch or look_up, if holding last frame, always show last
         if self.state == 'crouch' and self.crouch_hold:
             frame = frames[-1]
         elif self.state == 'look_up' and self.lookup_hold:
             frame = frames[-1]
+        elif self.state == 'idle':
+            frame = frames[0]
         else:
             frame = frames[self.anim_index % len(frames)]
         angle = -self.angle if self.facing_left else self.angle
         frame = pygame.transform.flip(frame, self.facing_left, False)
         rotated = pygame.transform.rotate(frame, angle)
-        rect = rotated.get_rect(center=(self.x + self.width // 2, self.y + self.height // 2))
+        # Side scrolling: subtract camera_x from Sonic's world position
+        rect = rotated.get_rect(midbottom=(self.x - camera_x + self.width // 2, self.y + self.height))
         surface.blit(rotated, rect.topleft)
 
 player = Player()
+
+# Camera setup
+def get_camera_x(player):
+    # Try to keep Sonic near center, but clamp camera to level bounds
+    min_x = 0
+    max_x = level_slopes[-1]['end'][0] - WIDTH
+    target = player.x + player.width // 2 - WIDTH // 2
+    return max(min_x, min(max_x, target))
 
 running = True
 while running:
@@ -294,13 +315,16 @@ while running:
             running = False
 
     player.update(keys)
+    camera_x = get_camera_x(player)
 
     # Draw ground slopes
     for slope in level_slopes:
-        pygame.draw.line(screen, GREEN, slope['start'], slope['end'], 6)
+        start = (slope['start'][0] - camera_x, slope['start'][1])
+        end = (slope['end'][0] - camera_x, slope['end'][1])
+        pygame.draw.line(screen, GREEN, start, end, 6)
 
     # Draw player
-    player.draw(screen)
+    player.draw(screen, camera_x)
 
     pygame.display.flip()
     clock.tick(60)

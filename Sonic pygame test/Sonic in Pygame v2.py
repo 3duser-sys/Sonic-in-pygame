@@ -19,7 +19,7 @@ def load_frames(folder, prefix, count):
     return [pygame.image.load(f"{folder}/{prefix}_{i+1}.png").convert_alpha() for i in range(count)]
 
 # Animation frame map -- uses only files you actually have!
-ANIM_FOLDER = "Sonic pygame test - Copy"
+ANIM_FOLDER = "Sonic pygame test"
 
 animations = {
     'idle': load_frames(ANIM_FOLDER, 'idle', 3),
