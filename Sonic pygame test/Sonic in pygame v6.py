@@ -35,7 +35,7 @@ animations = {
     'hurt': [pygame.image.load(f"{ANIM_FOLDER}/hurt.png").convert_alpha()],
 }
 
-# Make the level longer for scrolling
+# Level layout with slopes
 level_slopes = [
     {'start': (0, 440), 'end': (400, 440)},
     {'start': (400, 440), 'end': (600, 420)},
@@ -48,7 +48,7 @@ level_slopes = [
 
 class Player:
     def __init__(self):
-        self.x = 100  # world x
+        self.x = 100
         self.y = 100
         self.width = 48
         self.height = 48
@@ -56,7 +56,7 @@ class Player:
         self.ground_speed = 0
         self.angle = 0
         self.on_ground = False
-        self.gravity = 0.35   # SLOWER gravity for natural arc (was 0.6)
+        self.gravity = 0.35
         self.y_velocity = 0
 
         self.anim_timer = 0
@@ -72,26 +72,21 @@ class Player:
         self.crouch_hold = False
         self.was_lookup = False
         self.lookup_hold = False
-        self.idle_stage = 0  # 0=show idle_1, 1=do idle_special
+        self.idle_stage = 0
 
-        # Jumping
         self.jump_pressed = False
-
-        # For jump animation
         self.jump_anim_timer = 0
-        self.jump_anim_speed = 4  # lower is faster, higher is slower
+        self.jump_anim_speed = 4
+        self.has_landed = False  # NEW
 
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def update(self, keys):
         moved = False
-
-        # Crouch/look up
         crouching = keys[pygame.K_DOWN] and self.on_ground
         looking_up = keys[pygame.K_UP] and self.on_ground
 
-        # Only allow movement if not crouching or looking up
         if not crouching and not looking_up:
             if keys[pygame.K_LEFT]:
                 self.ground_speed -= 0.5
@@ -102,23 +97,21 @@ class Player:
                 self.facing_left = False
                 moved = True
 
-        # Jumping logic (Z is jump)
         z_pressed = keys[pygame.K_z]
         if z_pressed and not self.jump_pressed and self.on_ground and not crouching and not looking_up:
-            self.y_velocity = -8.2  # Slower, natural jump
+            self.y_velocity = -8.2
             self.on_ground = False
             self.state = 'jump'
             self.anim_index = 0
             self.jump_anim_timer = 0
+            self.has_landed = False  # reset landing flag
         self.jump_pressed = z_pressed
 
-        # Friction
         if self.on_ground:
             self.ground_speed *= 0.95
         else:
-            self.ground_speed *= 0.99  # Less friction in air
+            self.ground_speed *= 0.99
 
-        # Position of foot for ground check
         foot_x = self.x + self.width // 2
         foot_y = self.y + self.height
         tile, slope_angle, corrected_y = self.get_current_slope(foot_x)
@@ -145,96 +138,97 @@ class Player:
         speed = abs(self.ground_speed)
         prev_state = self.state
 
-        # --- Idle Animation Smart Logic and Hold Logic ---
+        # Jump animation handling
         if not self.on_ground:
-            self.state = 'jump'
-            # Cycle through jump_1 to jump_8 continuously while airborne
+            if self.state != 'jump':
+                self.state = 'jump'
+                self.anim_index = 0
+                self.jump_anim_timer = 0
+
             self.jump_anim_timer += 1
             if self.jump_anim_timer >= self.jump_anim_speed:
                 self.jump_anim_timer = 0
                 self.anim_index = (self.anim_index + 1) % len(animations['jump'])
+
             self._reset_idle()
             self.crouch_hold = False
             self.was_crouching = False
             self.lookup_hold = False
             self.was_lookup = False
             self.idle_stage = 0
-        elif crouching and 'crouch' in animations:
-            self.state = 'crouch'
-            if not self.was_crouching:
+
+        elif self.state == 'jump':
+            if self.on_ground and self.y_velocity >= 0 and not self.has_landed:
+                self.has_landed = True
+                if speed > 4:
+                    self.state = 'run'
+                elif speed > 0.8:
+                    self.state = 'walk'
+                else:
+                    self.state = 'idle'
                 self.anim_index = 0
                 self.anim_timer = 0
-                self.crouch_hold = False
-            self.was_crouching = True
-            if self.anim_index == len(animations['crouch']) - 1:
-                self.crouch_hold = True
-            self.lookup_hold = False
-            self.was_lookup = False
-            self.idle_stage = 0
-        elif looking_up and 'look_up' in animations:
-            self.state = 'look_up'
-            if not self.was_lookup:
-                self.anim_index = 0
-                self.anim_timer = 0
-                self.lookup_hold = False
-            self.was_lookup = True
-            if self.anim_index == len(animations['look_up']) - 1:
-                self.lookup_hold = True
-            self.crouch_hold = False
-            self.was_crouching = False
-            self.idle_stage = 0
-        elif speed > 8 and 'topspeed_run' in animations:
-            self.state = 'topspeed_run'
-            self._reset_idle()
-            self.crouch_hold = False
-            self.was_crouching = False
-            self.lookup_hold = False
-            self.was_lookup = False
-            self.idle_stage = 0
-        elif speed > 4:
-            self.state = 'run'
-            self._reset_idle()
-            self.crouch_hold = False
-            self.was_crouching = False
-            self.lookup_hold = False
-            self.was_lookup = False
-            self.idle_stage = 0
-        elif speed > 0.8:
-            self.state = 'walk'
-            self._reset_idle()
-            self.crouch_hold = False
-            self.was_crouching = False
-            self.lookup_hold = False
-            self.was_lookup = False
-            self.idle_stage = 0
         else:
-            if moved or not self.on_ground:
-                self._reset_idle()
-                self.crouch_hold = False
-                self.was_crouching = False
+            self.has_landed = False
+
+        # Grounded animations
+        if self.on_ground and self.state != "jump":
+            if crouching and 'crouch' in animations:
+                self.state = 'crouch'
+                if not self.was_crouching:
+                    self.anim_index = 0
+                    self.anim_timer = 0
+                    self.crouch_hold = False
+                self.was_crouching = True
+                if self.anim_index == len(animations['crouch']) - 1:
+                    self.crouch_hold = True
                 self.lookup_hold = False
                 self.was_lookup = False
                 self.idle_stage = 0
-            else:
-                self.idle_time += clock.get_time() / 1000.0
 
-            if self.idle_time < 5:
-                self.state = 'idle'
+            elif looking_up and 'look_up' in animations:
+                self.state = 'look_up'
+                if not self.was_lookup:
+                    self.anim_index = 0
+                    self.anim_timer = 0
+                    self.lookup_hold = False
+                self.was_lookup = True
+                if self.anim_index == len(animations['look_up']) - 1:
+                    self.lookup_hold = True
+                self.crouch_hold = False
+                self.was_crouching = False
                 self.idle_stage = 0
+
+            elif speed > 8:
+                self.state = 'topspeed_run'
+                self._reset_idle()
+
+            elif speed > 4:
+                self.state = 'run'
+                self._reset_idle()
+
+            elif speed > 0.8:
+                self.state = 'walk'
+                self._reset_idle()
+
             else:
-                self.idle_stage = 1
-                self.idle_special = True
-                self.idle_special_timer += clock.get_time() / 1000.0
-                if self.idle_special_timer <= 3:
-                    self.state = 'idle_special'
-                else:
+                if moved:
                     self._reset_idle()
+                else:
+                    self.idle_time += clock.get_time() / 1000.0
+                if self.idle_time < 5:
                     self.state = 'idle'
                     self.idle_stage = 0
-            self.crouch_hold = False
-            self.was_crouching = False
-            self.lookup_hold = False
-            self.was_lookup = False
+                else:
+                    self.idle_stage = 1
+                    self.idle_special = True
+                    self.idle_special_timer += clock.get_time() / 1000.0
+                    if self.idle_special_timer <= 3:
+                        self.state = 'idle_special'
+                    else:
+                        self._reset_idle()
+                        self.state = 'idle'
+                        self.idle_stage = 0
 
         # Reset animation index if state changed
         if self.state != prev_state:
@@ -244,7 +238,7 @@ class Player:
             elif not ((prev_state == 'crouch' and self.crouch_hold) or (prev_state == 'look_up' and self.lookup_hold)):
                 self.anim_timer = 0
 
-        # Frame timing (not for jump)
+        # Animation timer
         self.anim_timer += 1
         if self.state == 'idle_special':
             frame_speed = 10
@@ -252,23 +246,22 @@ class Player:
             frame_speed = 9999
         else:
             frame_speed = max(1, int(12 - min(speed, 10)))
-        if self.state not in ["jump"]:
+
+        if self.state != "jump":
             if self.anim_timer >= frame_speed:
                 self.anim_timer = 0
                 if self.state == 'idle_special':
                     self.anim_index = (self.anim_index + 1) % 2
-                elif self.state == 'crouch':
-                    if not self.crouch_hold:
-                        self.anim_index += 1
-                        if self.anim_index >= len(animations['crouch']):
-                            self.anim_index = len(animations['crouch']) - 1
-                            self.crouch_hold = True
-                elif self.state == 'look_up':
-                    if not self.lookup_hold:
-                        self.anim_index += 1
-                        if self.anim_index >= len(animations['look_up']):
-                            self.anim_index = len(animations['look_up']) - 1
-                            self.lookup_hold = True
+                elif self.state == 'crouch' and not self.crouch_hold:
+                    self.anim_index += 1
+                    if self.anim_index >= len(animations['crouch']):
+                        self.anim_index = len(animations['crouch']) - 1
+                        self.crouch_hold = True
+                elif self.state == 'look_up' and not self.lookup_hold:
+                    self.anim_index += 1
+                    if self.anim_index >= len(animations['look_up']):
+                        self.anim_index = len(animations['look_up']) - 1
+                        self.lookup_hold = True
                 elif self.state in ('walk', 'run', 'topspeed_run'):
                     self.anim_index = (self.anim_index + 1) % len(animations.get(self.state, [animations['idle'][0]]))
                 elif self.state == 'idle':
@@ -315,7 +308,7 @@ class Player:
             frame = frames[0]
         else:
             frame = frames[self.anim_index % len(frames)]
-        # DO NOT rotate the sprite when jumping - just use the spinning sprites!
+
         display_angle = -self.angle if self.facing_left else self.angle if self.state != 'jump' else 0
         frame = pygame.transform.flip(frame, self.facing_left, False)
         rotated = pygame.transform.rotate(frame, display_angle)
@@ -342,13 +335,11 @@ while running:
     player.update(keys)
     camera_x = get_camera_x(player)
 
-    # Draw ground slopes
     for slope in level_slopes:
         start = (slope['start'][0] - camera_x, slope['start'][1])
         end = (slope['end'][0] - camera_x, slope['end'][1])
         pygame.draw.line(screen, GREEN, start, end, 6)
 
-    # Draw player
     player.draw(screen, camera_x)
 
     pygame.display.flip()
@@ -356,3 +347,4 @@ while running:
 
 pygame.quit()
 sys.exit()
+  
