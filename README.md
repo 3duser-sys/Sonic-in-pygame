@@ -2,7 +2,7 @@
 # THIS CANNOT BE USED UNTIL THAT "NO" TURNS INTO A "YES"
 #BUT OFC CAN BE PLAYED GO TO RELEASES
 # NO
-Hey! So this is my new account, and I am also currently trying to make a genesis emulator in pygame (SEE HERE, NO C, ONE FILE) https://github.com/3duser-sys/Sega-Genesis-emulator-COMPLETELY-PYTHON (I DONT THINK I HAVE PUT ANYTHING THERE YET SRRY)
+Hey! So this is my new account, and I am also currently trying to make a genesis emulator in pygame (SEE HERE, NO C, ONE FILE) https://github.com/3duser-sys/Sega-Genesis-emulator-COMPLETELY-PYTHON (HELP ME WITH IT I NEED HEP!!!!!!)
 
 This is just a fun project based on SM I guess. 
 
