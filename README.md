@@ -5,7 +5,11 @@
 Hey! So this is my new account, and I am also currently trying to make a genesis emulator in pygame (SEE HERE, NO C, ONE FILE) https://github.com/3duser-sys/Sega-Genesis-emulator-COMPLETELY-PYTHON (I DONT THINK I HAVE PUT ANYTHING THERE YET SRRY)
 
 This is just a fun project based on SM I guess. 
+
 NEW!!!
+![image](https://github.com/user-attachments/assets/b9d8b609-5d46-4667-8403-4a9e37dde006)
+![image](https://github.com/user-attachments/assets/41d7fc45-a25d-4db8-b3d5-a11660a8895b)
+MUSIC TOO!! https://downloads.khinsider.com/game-soundtracks/album/sonic-the-hedgehog-4-2020-edition-2024 
 
 OLD.
 ![image](https://github.com/user-attachments/assets/33acd6d5-282d-4aba-bcb1-2554af0006d5)
