@@ -49,6 +49,16 @@ level_slopes = [
     {'start': (2000, 440), 'end': (2400, 440)},
 ]
 
+# --- MP3 MUSIC SETUP ---
+pygame.mixer.init()
+
+def play_music(path, loops=0):
+    pygame.mixer.music.load(path)
+    pygame.mixer.music.play(loops)
+
+def stop_music():
+    pygame.mixer.music.stop()
+
 def show_title_screen(screen):
     ANIM_FOLDER = "Sonic pygame test"
     sega_img = pygame.image.load(f"{ANIM_FOLDER}/title_screen_1.png").convert()
@@ -59,6 +69,8 @@ def show_title_screen(screen):
     sega_frames = 60
     clock = pygame.time.Clock()
 
+    # --- SEGAAAAA! ---
+    play_music(f"{ANIM_FOLDER}/sega.mp3")
     timer = 0
     while timer < sega_frames:
         for event in pygame.event.get():
@@ -70,6 +82,7 @@ def show_title_screen(screen):
         clock.tick(60)
         timer += 1
 
+    # Flash
     for i in range(flash_frames):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -78,6 +91,11 @@ def show_title_screen(screen):
         screen.fill((255, 255, 255))
         pygame.display.flip()
         clock.tick(60)
+
+    stop_music()  # Stop SEGA music before title theme
+
+    # --- TITLE THEME ---
+    play_music(f"{ANIM_FOLDER}/title_theme.mp3", loops=-1)
 
     prompt_font = pygame.font.SysFont("arial", 36, bold=True)
     blink = False
@@ -89,6 +107,7 @@ def show_title_screen(screen):
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN or event.type == pygame.JOYBUTTONDOWN:
+                stop_music()  # Stop title theme as soon as game starts
                 return
 
         screen.blit(title_img, (0, 0))
@@ -112,7 +131,10 @@ class Player:
         self.ground_speed = 0
         self.angle = 0
         self.on_ground = False
-        self.gravity = 0.21875  # Sonic Mania gravity
+        self.gravity = 0.21875  # Mania normal gravity
+        self.jump_hold_gravity = 0.115  # Mania jump hold gravity (lower)
+        self.jump_hold_frames_max = 15  # About 0.25s at 60FPS
+        self.jump_hold_frames = 0
         self.y_velocity = 0
         self.air_x_speed = 0
 
@@ -190,6 +212,7 @@ class Player:
         self.dropdash_charge_time = 0
         self.jump_grace = 0
         self.jump_was_released = False
+        self.jump_hold_frames = 0
 
     def update(self, keys):
         GROUND_ACCEL = 0.16
@@ -314,7 +337,7 @@ class Player:
         elif self.ground_speed < -speed_cap:
             self.ground_speed = -speed_cap
 
-        # --- JUMP (impulse ONCE, variable jump height, gravity always applied) ---
+        # --- JUMP (Mania variable jump height) ---
         if (
             z_pressed and not self.jump_pressed and self.on_ground
             and not crouching
@@ -322,7 +345,7 @@ class Player:
             and not self.spindash_charging
             and not self.peelout_charging
         ):
-            jump_power = 10  # Sonic Mania jump velocity
+            jump_power = 6.5  # Mania jump initial velocity
             self.y_velocity = -jump_power
             self.air_x_speed = self.ground_speed
             self.on_ground = False
@@ -331,9 +354,7 @@ class Player:
             self.jump_anim_timer = 0
             self.has_landed = False
             self.jump_grace = self.JUMP_GRACE_TIME
-
-        if not z_pressed and self.y_velocity < 0:
-            self.y_velocity *= 0.5
+            self.jump_hold_frames = self.jump_hold_frames_max
 
         self.jump_pressed = z_pressed
 
@@ -367,6 +388,15 @@ class Player:
             self.dropdash_charge_time = 0
             self.dropdash_ready = False
 
+        # --- Mania variable jump height: lower gravity while jump held, for a short time ---
+        if not self.on_ground:
+            if z_pressed and self.jump_hold_frames > 0 and self.y_velocity < 0:
+                self.y_velocity += self.jump_hold_gravity
+                self.jump_hold_frames -= 1
+            else:
+                self.y_velocity += self.gravity
+                self.jump_hold_frames = 0
+
         if self.on_ground:
             tile, slope_angle, corrected_y = self.get_current_slope(self.x + self.width // 2)
             if self.rolling:
@@ -382,9 +412,6 @@ class Player:
         else:
             self.air_x_speed *= 0.995
             self.ground_speed = self.air_x_speed
-
-        if not self.on_ground:
-            self.y_velocity += self.gravity
 
         if self.on_ground:
             self.x += self.ground_speed
