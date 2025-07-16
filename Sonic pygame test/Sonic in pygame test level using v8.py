@@ -3,6 +3,7 @@ import sys
 import math
 
 pygame.init()
+pygame.display.set_icon(pygame.image.load("Sonic pygame test/amy.ico"))
 
 WIDTH, HEIGHT = 800, 480
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -36,9 +37,10 @@ animations = {
     'die': [pygame.image.load(f"{ANIM_FOLDER}/die.png").convert_alpha()],
     'hurt': [pygame.image.load(f"{ANIM_FOLDER}/hurt.png").convert_alpha()],
     'roll': load_frames(ANIM_FOLDER, 'jump', 8),
+    'ground_enemy': load_frames(ANIM_FOLDER, 'ground_enemy', 7),
+    'sky_enemy': load_frames(ANIM_FOLDER, 'sky_enemy', 4),
 }
 
-# Load goal post animation (signpost)
 signpost_frames = [
     pygame.image.load(f"{ANIM_FOLDER}/signpost_1.png").convert_alpha(),
     pygame.image.load(f"{ANIM_FOLDER}/signpost_2.png").convert_alpha(),
@@ -47,9 +49,7 @@ signpost_frames = [
     pygame.image.load(f"{ANIM_FOLDER}/signpost_5.png").convert_alpha(),
 ]
 
-# MASSIVE, VARIED SONIC LEVEL!
 level_slopes = [
-    # Flat starting area
     {'start': (0, 440), 'end': (400, 440)},
     {'start': (400, 440), 'end': (600, 420)},
     {'start': (600, 420), 'end': (800, 400)},
@@ -61,19 +61,16 @@ level_slopes = [
     {'start': (1800, 430), 'end': (2000, 380)},
     {'start': (2000, 380), 'end': (2200, 440)},
     {'start': (2200, 440), 'end': (2600, 440)},
-    # Hill section
     {'start': (2600, 440), 'end': (2700, 400)},
     {'start': (2700, 400), 'end': (2800, 420)},
     {'start': (2800, 420), 'end': (2900, 380)},
     {'start': (2900, 380), 'end': (3100, 420)},
     {'start': (3100, 420), 'end': (3300, 380)},
-    # Loop-like shape
     {'start': (3300, 380), 'end': (3400, 340)},
     {'start': (3400, 340), 'end': (3500, 320)},
     {'start': (3500, 320), 'end': (3600, 340)},
     {'start': (3600, 340), 'end': (3700, 380)},
     {'start': (3700, 380), 'end': (3900, 440)},
-    # Valley & final dash
     {'start': (3900, 440), 'end': (4200, 440)},
     {'start': (4200, 440), 'end': (4300, 470)},
     {'start': (4300, 470), 'end': (4400, 470)},
@@ -81,13 +78,10 @@ level_slopes = [
     {'start': (4600, 400), 'end': (4800, 360)},
     {'start': (4800, 360), 'end': (5000, 380)},
     {'start': (5000, 380), 'end': (5200, 440)},
-    # Flat finish
     {'start': (5200, 440), 'end': (5600, 440)},
-    # Goal post section
     {'start': (5600, 440), 'end': (5620, 440)},
 ]
 
-# --- MP3 MUSIC SETUP ---
 pygame.mixer.init()
 
 def play_music(path, loops=0):
@@ -217,6 +211,15 @@ class Player:
 
         self.respawn_x = 100
         self.respawn_y = 100
+
+        # HURT STATE
+        self.hurt_timer = 0
+        self.HURT_TIME = 32
+        self.hurt_dx = 0
+        self.hurt_dy = 0
+        self.invincible_timer = 0
+        self.INVINCIBLE_TIME = 90
+
         self.dying = False
         self.die_timer = 0
         self.die_anim_length = 60
@@ -247,8 +250,58 @@ class Player:
         self.jump_grace = 0
         self.jump_was_released = False
         self.jump_hold_frames = 0
+        self.hurt_timer = 0
+        self.hurt_dx = 0
+        self.hurt_dy = 0
+        self.invincible_timer = 0
+
+    def is_really_rolling(self):
+        return (
+            self.rolling
+            and not self.spindash_charging
+            and not self.peelout_charging
+            and abs(self.ground_speed) >= self.roll_threshold
+            and (not self.on_ground or (self.on_ground and (self.crouch_hold or abs(self.ground_speed) > self.roll_threshold)))
+        )
+
+    def hurt(self, enemy_x=None):
+        if self.hurt_timer > 0 or self.invincible_timer > 0:
+            return
+        self.state = 'hurt'
+        self.hurt_timer = self.HURT_TIME
+        self.invincible_timer = self.INVINCIBLE_TIME
+        # Knock back away from enemy if possible
+        if enemy_x is not None:
+            direction = -1 if self.x + self.width // 2 < enemy_x else 1
+        else:
+            direction = -1 if self.facing_left else 1
+        self.hurt_dx = direction * 5
+        self.hurt_dy = -6
+        self.ground_speed = 0
+        self.air_x_speed = 0
+        self.y_velocity = 0
+        self.rolling = False
+        self.spindash_charging = False
+        self.peelout_charging = False
+        self.anim_index = 0
+        self.anim_timer = 0
+        # No life loss, just play animation and knockback
 
     def update(self, keys):
+        if self.invincible_timer > 0:
+            self.invincible_timer -= 1
+        if self.hurt_timer > 0:
+            self.hurt_timer -= 1
+            self.x += self.hurt_dx
+            self.y += self.hurt_dy
+            self.hurt_dy += self.gravity
+            # When timer ends, recover control
+            if self.hurt_timer <= 0:
+                self.state = "idle"
+                self.anim_index = 0
+                self.anim_timer = 0
+            return  # Don't process other movement/action during hurt
+
         GROUND_ACCEL = 0.16
         GROUND_DECEL = 0.08
         FRICTION = 0.0625
@@ -411,10 +464,11 @@ class Player:
             if self.dropdash_ready:
                 self.ground_speed = self.dropdash_speed * (1 if not self.facing_left else -1)
                 self.air_x_speed = self.ground_speed
-                self.rolling = True
-                self.state = 'roll'
-                self.anim_index = 0
-                self.anim_timer = 0
+                if self.on_ground and abs(self.ground_speed) > self.roll_threshold:
+                    self.rolling = True
+                    self.state = 'roll'
+                    self.anim_index = 0
+                    self.anim_timer = 0
             self.dropdash_charging = False
             self.dropdash_charge_time = 0
             self.dropdash_ready = False
@@ -631,11 +685,13 @@ class Player:
         return None, 0, 0
 
     def draw(self, surface, camera_x):
-        if getattr(self, 'dropdash_charging', False) and not getattr(self, 'on_ground', True):
+        if self.hurt_timer > 0:
+            frame = animations['hurt'][0]
+        elif getattr(self, 'dropdash_charging', False) and not getattr(self, 'on_ground', True):
             frames = animations['dropdash_charge']
             frame = frames[(pygame.time.get_ticks() // 120) % len(frames)]
         else:
-            anim_state = 'roll' if self.rolling else self.state
+            anim_state = 'roll' if self.is_really_rolling() else self.state
             if anim_state == 'idle_special':
                 frames = [animations['idle'][1], animations['idle'][2]]
             elif anim_state == 'spindash':
@@ -644,6 +700,8 @@ class Player:
                 frames = animations['roll']
             elif anim_state == 'topspeed_run':
                 frames = animations['topspeed_run']
+            elif anim_state == 'hurt':
+                frames = animations['hurt']
             else:
                 frames = animations.get(anim_state, animations['idle'])
 
@@ -662,6 +720,111 @@ class Player:
         rect = rotated.get_rect(midbottom=(self.x - camera_x + self.width // 2, self.y + self.height))
         surface.blit(rotated, rect.topleft)
 
+class Enemy:
+    def __init__(self, x, y, sky=False):
+        self.x = x
+        self.y = y
+        self.width = 40
+        self.height = 40
+        self.alive = True
+        self.sky = sky
+        self.anim_timer = 0
+        self.anim_index = 0
+        self.direction = 1
+        self.speed = 1.1 if not sky else 2
+        self.patrol_left = x - 80
+        self.patrol_right = x + 80
+        self.facing_left = False
+        self.vertical_offset = 0
+
+    def get_rect(self):
+        return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def update(self, sonic_x, sonic_y):
+        if not self.alive:
+            return
+        if self.sky:
+            dx = (sonic_x - self.x)
+            dy = (sonic_y - self.y)
+            dist = math.hypot(dx, dy)
+            if dist > 2:
+                self.x += self.speed * dx / (dist + 1e-8)
+                self.y += self.speed * dy / (dist + 1e-8)
+            self.facing_left = dx > 0
+        else:
+            move_dir = 1 if sonic_x > self.x else -1
+            self.facing_left = move_dir > 0
+            self.x += move_dir * self.speed
+            foot_x = self.x + self.width // 2
+            slope, angle, corrected_y = self.get_current_slope(foot_x)
+            if slope:
+                self.y = corrected_y - self.height
+            else:
+                self.y += 2
+        self.anim_timer += 1
+        if self.sky:
+            if self.anim_timer >= 6:
+                self.anim_timer = 0
+                self.anim_index = (self.anim_index + 1) % 4
+        else:
+            if self.anim_timer >= 8:
+                self.anim_timer = 0
+                self.anim_index = (self.anim_index + 1) % 7
+
+    def get_current_slope(self, px):
+        for slope in level_slopes:
+            x1, y1 = slope['start']
+            x2, y2 = slope['end']
+            if x1 <= px <= x2:
+                t = (px - x1) / (x2 - x1)
+                py = y1 + t * (y2 - y1)
+                angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+                return slope, angle, py
+        return None, 0, 0
+
+    def draw(self, surface, camera_x):
+        if not self.alive:
+            return
+        if self.sky:
+            frames = animations['sky_enemy']
+        else:
+            frames = animations['ground_enemy']
+        frame = frames[self.anim_index % len(frames)]
+        frame = pygame.transform.flip(frame, self.facing_left, False)
+        rect = frame.get_rect(midbottom=(self.x - camera_x + self.width // 2, self.y + self.height))
+        surface.blit(frame, rect.topleft)
+
+    def handle_collision_with_sonic(self, player):
+        if not self.alive or player.invincible_timer > 0:
+            return
+        prect = player.get_rect()
+        erect = self.get_rect()
+        if not prect.colliderect(erect):
+            return
+        # Sky enemy: destroyed if Sonic is rolling or jumping upwards, else hurts Sonic
+        if self.sky:
+            if player.is_really_rolling() or (player.state == "jump" and player.y_velocity < 0):
+                self.alive = False
+            else:
+                player.hurt(self.x)
+        else:
+            jumping_on = (
+                player.state == "jump"
+                and player.y + player.height - 8 < self.y
+                and player.y_velocity > 0
+            )
+            spinning = player.is_really_rolling()
+            if jumping_on:
+                self.alive = False
+                player.y_velocity = -8
+                player.on_ground = False
+                player.state = "jump"
+                player.jump_anim_timer = 0
+            elif spinning:
+                self.alive = False
+            else:
+                player.hurt(self.x)
+
 player = Player()
 
 def get_camera_x(player):
@@ -670,18 +833,25 @@ def get_camera_x(player):
     target = player.x + player.width // 2 - WIDTH // 2
     return max(min_x, min(max_x, target))
 
+enemies = [
+    Enemy(600, 355, sky=True),
+    Enemy(1100, 410, sky=False),
+    Enemy(3000, 350, sky=True),
+    Enemy(3600, 400, sky=False)
+]
+
 while True:
     show_title_screen(screen)
-    # Reset player for new game
     player.respawn()
+    for e in enemies:
+        e.alive = True
     running = True
     level_complete = False
     goal_x = 5610
 
-    # For animating the goal post
     signpost_anim_timer = 0
     signpost_anim_index = 0
-    signpost_anim_speed = 8  # Frames per animation step
+    signpost_anim_speed = 8
 
     while running:
         screen.fill(SKY)
@@ -707,20 +877,22 @@ while True:
             end = (slope['end'][0] - camera_x, slope['end'][1])
             pygame.draw.line(screen, GREEN, start, end, 6)
 
-        # Goal post animation logic
+        for e in enemies:
+            e.update(player.x, player.y)
+            e.handle_collision_with_sonic(player)
+            e.draw(screen, camera_x)
+
         signpost_anim_timer += 1
         if signpost_anim_timer >= signpost_anim_speed:
             signpost_anim_timer = 0
             signpost_anim_index = (signpost_anim_index + 1) % len(signpost_frames)
 
-        # Draw animated goal post
         signpost_img = signpost_frames[signpost_anim_index]
         goal_rect = signpost_img.get_rect(midbottom=(goal_x - camera_x + 8, 470))
         screen.blit(signpost_img, goal_rect.topleft)
 
         player.draw(screen, camera_x)
 
-        # Level complete check
         if not level_complete and player.x + player.width // 2 >= goal_x:
             level_complete = True
             font = pygame.font.SysFont("arial", 64, bold=True)
@@ -728,7 +900,7 @@ while True:
             screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - text.get_height()//2))
             pygame.display.flip()
             pygame.time.wait(3500)
-            break  # Go back to title screen after showing message!
+            break
 
         pygame.display.flip()
         clock.tick(60)
